@@ -79,8 +79,8 @@ async def list_clients(limit: int = 25) -> str:
     """List clients (homeowners/businesses you service) with their contact info."""
     try:
         return _json(await _client().list_clients(first=limit))
-    except JobberError as e:
-        return _format_error(e)
+    except JobberError:
+        raise
 
 
 @mcp.tool()
@@ -92,8 +92,8 @@ async def list_jobs(limit: int = 25, status: str | None = None) -> str:
     """
     try:
         return _json(await _client().list_jobs(first=limit, status=status))
-    except JobberError as e:
-        return _format_error(e)
+    except JobberError:
+        raise
 
 
 @mcp.tool()
@@ -105,8 +105,8 @@ async def list_quotes(limit: int = 25, status: str | None = None) -> str:
     """
     try:
         return _json(await _client().list_quotes(first=limit, status=status))
-    except JobberError as e:
-        return _format_error(e)
+    except JobberError:
+        raise
 
 
 @mcp.tool()
@@ -114,8 +114,8 @@ async def list_invoices(limit: int = 25, status: str | None = None) -> str:
     """List invoices with optional status filter."""
     try:
         return _json(await _client().list_invoices(first=limit, status=status))
-    except JobberError as e:
-        return _format_error(e)
+    except JobberError:
+        raise
 
 
 @mcp.tool()
@@ -124,8 +124,8 @@ async def health_check() -> str:
     try:
         await _client().list_clients(first=1)
         return _json({"status": "ok"})
-    except JobberError as e:
-        return _format_error(e)
+    except JobberError:
+        raise
 
 
 # ----- Write tools ----------------------------------------------------------
@@ -153,8 +153,8 @@ async def create_client(
             email=email,
             phone=phone,
         ))
-    except JobberError as e:
-        return _format_error(e)
+    except JobberError:
+        raise
 
 
 @mcp.tool()
@@ -162,8 +162,8 @@ async def add_client_note(client_id: str, body: str, pinned: bool = False) -> st
     """Add a note to a client's record. Useful after a phone call or site visit."""
     try:
         return _json(await _client().create_note(client_id=client_id, body=body, pinned=pinned))
-    except JobberError as e:
-        return _format_error(e)
+    except JobberError:
+        raise
 
 
 def main() -> None:

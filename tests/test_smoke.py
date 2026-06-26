@@ -14,6 +14,7 @@ import pytest
 import respx
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from mcp.server.fastmcp.exceptions import ToolError
 
 from jobber_mcp import (
     JobberAPIError,
@@ -23,6 +24,7 @@ from jobber_mcp import (
     JobberNotFoundError,
     JobberRateLimitError,
 )
+from jobber_mcp import server as _jobber_mcp_server
 from jobber_mcp.server import _format_error, _json
 
 GRAPHQL_URL = "https://api.getjobber.com/api/graphql/"
@@ -334,3 +336,41 @@ def test_error_repr_includes_structured_fields() -> None:
     assert "http_status=200" in r
     assert "error_code='oops'" in r
     assert "request_id='req-1'" in r
+
+
+
+# --- Security regression: tools must raise (not return string) so FastMCP ---
+# sets isError=true. See the Blackwell Systems audit (54 MCPs / 20 bugs)
+# and MCPTox benchmark (arXiv:2508.14925): returning error strings as plain
+# content makes agents retry indefinitely. We verify our tools do NOT
+# regress to that pattern.
+#
+# Pattern: call the FastMCP server in-process, force a tool to encounter
+# a downstream error, assert that FastMCP sees a ToolError (which its
+# internal call_tool() handler converts to CallToolResult with isError=true).
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_tool_error_sets_iserror_true() -> None:
+    """FastMCP must wrap the raised exception → sets isError=true over the wire."""
+    # Set up creds for client construction
+    os.environ["JOBBER_ACCESS_TOKEN"] = "pre-minted"
+
+    # Mock the OAuth refresh (if applicable) + a failing API call
+
+    respx.post("https://api.getjobber.com/api/graphql/").mock(
+        return_value=httpx.Response(401, text="")
+    )
+
+
+
+    with pytest.raises(ToolError) as exc_info:
+        await _jobber_mcp_server.mcp.call_tool("list_clients", {})
+
+    msg = str(exc_info.value)
+    assert "Jobber rejected the bearer token" in msg, (
+        f"Expected auth hint in the error; got: {msg!r}. "
+        "Returning error strings as plain content (the OLD pattern) loses "
+        "isError=true and the agent cannot tell the tool failed."
+    )
