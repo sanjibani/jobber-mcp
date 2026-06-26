@@ -8,6 +8,7 @@ Quick start:
     export JOBBER_ACCESS_TOKEN=...
     jobber_mcp
 """
+
 from __future__ import annotations
 
 import json
@@ -17,6 +18,7 @@ from typing import Any
 import structlog
 from mcp.server.fastmcp import FastMCP
 
+from .audit import audit_tool_call
 from .client import JobberClient
 from .exceptions import (
     JobberAPIError,
@@ -34,8 +36,8 @@ def _format_error(e: Exception) -> str:
     if isinstance(e, JobberAuthError):
         return (
             "Authentication failed against Jobber. Check JOBBER_ACCESS_TOKEN. "
-            "Tokens expire — re-run the OAuth flow at https://developer.getjobber.com/docs/. "
-            f"Details: {e}"
+            "Tokens expire — re-run the OAuth flow at "
+            f"https://developer.getjobber.com/docs/. Details: {e}"
         )
     if isinstance(e, JobberNotFoundError):
         return f"Resource not found: {e}"
@@ -60,9 +62,10 @@ def _json(data: Any) -> str:
 mcp = FastMCP(
     "jobber_mcp",
     instructions=(
-        "Tools for Jobber — home service business management (HVAC, plumbing, "
-        "landscaping, etc.). Read clients, jobs, quotes, invoices; create clients "
-        "and add notes. Auth: OAuth2 bearer token passed via JOBBER_ACCESS_TOKEN env var."
+        "Tools for Jobber — home service business management "
+        "(HVAC, plumbing, landscaping, etc.). Read clients, jobs, quotes, invoices; "
+        "create clients and add notes. Auth: OAuth2 bearer token passed via "
+        "JOBBER_ACCESS_TOKEN env var."
     ),
 )
 
@@ -71,16 +74,16 @@ def _client() -> JobberClient:
     return JobberClient()
 
 
-# ----- Read tools -----------------------------------------------------------
-
-
 @mcp.tool()
 async def list_clients(limit: int = 25) -> str:
     """List clients (homeowners/businesses you service) with their contact info."""
-    try:
-        return _json(await _client().list_clients(first=limit))
-    except JobberError:
-        raise
+    with audit_tool_call("list_clients", {"limit": limit}) as audit:
+        try:
+            out = _json(await _client().list_clients(first=limit))
+            audit.set_result(out)
+            return out
+        except JobberError:
+            raise
 
 
 @mcp.tool()
@@ -90,10 +93,13 @@ async def list_jobs(limit: int = 25, status: str | None = None) -> str:
     Optional status filter — common values: ``active``, ``awaiting``,
     ``completed``, ``canceled``, ``needsAttention``.
     """
-    try:
-        return _json(await _client().list_jobs(first=limit, status=status))
-    except JobberError:
-        raise
+    with audit_tool_call("list_jobs", {"limit": limit, "status": status}) as audit:
+        try:
+            out = _json(await _client().list_jobs(first=limit, status=status))
+            audit.set_result(out)
+            return out
+        except JobberError:
+            raise
 
 
 @mcp.tool()
@@ -103,32 +109,38 @@ async def list_quotes(limit: int = 25, status: str | None = None) -> str:
     Common statuses: ``awaiting_response``, ``approved``, ``declined``,
     ``converted``, ``expires``.
     """
-    try:
-        return _json(await _client().list_quotes(first=limit, status=status))
-    except JobberError:
-        raise
+    with audit_tool_call("list_quotes", {"limit": limit, "status": status}) as audit:
+        try:
+            out = _json(await _client().list_quotes(first=limit, status=status))
+            audit.set_result(out)
+            return out
+        except JobberError:
+            raise
 
 
 @mcp.tool()
 async def list_invoices(limit: int = 25, status: str | None = None) -> str:
     """List invoices with optional status filter."""
-    try:
-        return _json(await _client().list_invoices(first=limit, status=status))
-    except JobberError:
-        raise
+    with audit_tool_call("list_invoices", {"limit": limit, "status": status}) as audit:
+        try:
+            out = _json(await _client().list_invoices(first=limit, status=status))
+            audit.set_result(out)
+            return out
+        except JobberError:
+            raise
 
 
 @mcp.tool()
 async def health_check() -> str:
     """Verify the access token is valid by listing 1 client."""
-    try:
-        await _client().list_clients(first=1)
-        return _json({"status": "ok"})
-    except JobberError:
-        raise
-
-
-# ----- Write tools ----------------------------------------------------------
+    with audit_tool_call("health_check", {}) as audit:
+        try:
+            await _client().list_clients(first=1)
+            out = _json({"status": "ok"})
+            audit.set_result(out)
+            return out
+        except JobberError:
+            raise
 
 
 @mcp.tool()
@@ -145,25 +157,44 @@ async def create_client(
     Jobber's Lead source field — this is the only way leads enter the
     system via your integration.
     """
-    try:
-        return _json(await _client().create_client(
-            first_name=first_name,
-            last_name=last_name,
-            company_name=company_name,
-            email=email,
-            phone=phone,
-        ))
-    except JobberError:
-        raise
+    with audit_tool_call(
+        "create_client",
+        {
+            "first_name": first_name,
+            "last_name": last_name,
+            "company_name": company_name,
+            "email": email,
+            "phone": phone,
+        },
+    ) as audit:
+        try:
+            out = _json(
+                await _client().create_client(
+                    first_name=first_name,
+                    last_name=last_name,
+                    company_name=company_name,
+                    email=email,
+                    phone=phone,
+                )
+            )
+            audit.set_result(out)
+            return out
+        except JobberError:
+            raise
 
 
 @mcp.tool()
 async def add_client_note(client_id: str, body: str, pinned: bool = False) -> str:
     """Add a note to a client's record. Useful after a phone call or site visit."""
-    try:
-        return _json(await _client().create_note(client_id=client_id, body=body, pinned=pinned))
-    except JobberError:
-        raise
+    with audit_tool_call(
+        "add_client_note", {"client_id": client_id, "body": body, "pinned": pinned}
+    ) as audit:
+        try:
+            out = _json(await _client().create_note(client_id=client_id, body=body, pinned=pinned))
+            audit.set_result(out)
+            return out
+        except JobberError:
+            raise
 
 
 def main() -> None:
