@@ -14,9 +14,20 @@ import json
 import sys
 from typing import Any
 
+import structlog
 from mcp.server.fastmcp import FastMCP
 
-from .client import JobberAPIError, JobberAuthError, JobberClient, JobberError
+from .client import JobberClient
+from .exceptions import (
+    JobberAPIError,
+    JobberAuthError,
+    JobberConnectionError,
+    JobberError,
+    JobberNotFoundError,
+    JobberRateLimitError,
+)
+
+log = structlog.get_logger(__name__)
 
 
 def _format_error(e: Exception) -> str:
@@ -26,8 +37,17 @@ def _format_error(e: Exception) -> str:
             "Tokens expire — re-run the OAuth flow at https://developer.getjobber.com/docs/. "
             f"Details: {e}"
         )
+    if isinstance(e, JobberNotFoundError):
+        return f"Resource not found: {e}"
+    if isinstance(e, JobberRateLimitError):
+        wait = f" Retry in {e.retry_after}s." if e.retry_after else ""
+        return f"Jobber rate limit hit.{wait} Slow down."
+    if isinstance(e, JobberConnectionError):
+        return f"Network failure talking to Jobber: {e}"
     if isinstance(e, JobberAPIError):
-        return f"Jobber error: {e}"
+        request_id = f" (request_id: {e.request_id})" if e.request_id else ""
+        gql = f" (graphql_errors: {len(e.graphql_errors)})" if e.graphql_errors else ""
+        return f"Jobber API error (HTTP {e.http_status}){request_id}{gql}: {e}"
     if isinstance(e, JobberError):
         return f"Jobber error: {e}"
     return f"Unexpected error: {e!r}"
@@ -150,7 +170,7 @@ def main() -> None:
     try:
         mcp.run()
     except JobberAuthError as e:
-        print(f"[jobber-mcp] {e}", file=sys.stderr)
+        log.error("server.auth_failed_on_start", error=str(e))
         sys.exit(1)
 
 
